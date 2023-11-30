@@ -11,6 +11,7 @@ import subprocess
 import pyautogui
 import argparse
 import platform
+import time
 
 from prompt_toolkit import prompt
 from prompt_toolkit.shortcuts import message_dialog
@@ -33,13 +34,17 @@ You are a Self-Operating Computer. You use the same operating system as a human.
 
 From looking at the screen and the objective your goal is to take the best next action. 
 
-To operate the computer you have the five options below. 
+To operate the computer you have the nine options below. 
 
-1. CLICK - Move mouse and click
+1. CLICK - Move mouse and click (most used)
 2. RIGHTCLICK - Move mouse and right click
-3. TYPE - Type on the keyboard
-4. SEARCH - Search for a program on Mac and open it
-5. DONE - When you completed the task respond with the exact following phrase content
+3. DOUBLECLICK - Move mouse and double click
+4. DRAG - Move mouse and drag
+5. HOLDMOUSE - Hold mouse down
+6. HOLDKEY - Hold key down
+7. TYPE - Type on the keyboard (most used)
+8. SEARCH - Search for a program on Mac/Windows/Linux and open it (most used)
+9. DONE - When you completed the task respond with the exact following phrase content
 
 Here are the response formats below. 
 
@@ -49,13 +54,25 @@ Response: CLICK {{ "x": "percent", "y": "percent", "description": "~description 
 2. RIGHTCLICK
 Response: RIGHT CLICK {{ "x": "percent", "y": "percent", "description": "~description here~", "reason": "~reason here~" }}
 
-3. TYPE
+3. DOUBLECLICK
+Response: DOUBLE CLICK {{ "x": "percent", "y": "percent", "description": "~description here~", "reason": "~reason here~" }}
+
+4. DRAG
+Response: DRAG {{ "start_x": "percent", "start_y": "percent", "end_x": "percent", "end_y": "percent", "description": "~description here~", "reason": "~reason here~" }}
+
+5. HOLDMOUSE
+Response: HOLDMOUSE {{ "duration": "seconds", "description": "~description here~", "reason": "~reason here~" }}
+
+6. HOLDKEY
+Response: HOLDKEY {{ "key": "key", "duration": "seconds", "description": "~description here~", "reason": "~reason here~" }}
+
+7. TYPE
 Response: TYPE "value you want to type"
 
-4. SEARCH
+8. SEARCH
 Response: SEARCH "app you want to search for on Mac"
 
-5. DONE
+9. DONE
 Response: DONE
 
 Here are examples of how to respond.
@@ -81,6 +98,8 @@ A few important notes:
 - When opening Chrome, if you see a profile icon click that to open chrome fully, it is located at: {{ "x": "50%", "y": "55%" }} 
 - The Chrome address bar is generally at: {{ "x": "50%", "y": "9%" }}
 - After you click to enter a field you can go ahead and start typing!
+- Aim to use information from your knowledgebase rather than searching for information on the internet, unless it is necessary to perform a task.
+- Consider the best options based on your knowledge of the specific program being used, such as Chrome, Powerpoint, Excel, etc.
 
 {previous_action}
 
@@ -234,6 +253,15 @@ def main(model):
             function_response = mouse_click(action_detail)
         elif action_type == "RIGHTCLICK":
             function_response = mouse_click(action_detail, "right")
+        elif action_type == "DOUBLECLICK":
+            function_response = mouse_click(action_detail, "double")
+        elif action_type == "DRAG":
+            function_response = drag(action_detail["start"], action_detail["end"])
+        elif action_type == "HOLDMOUSE":
+            function_response = hold_mouse(action_detail)
+        elif action_type == "HOLDKEY":
+            function_response = hold_key(action_detail["key"], action_detail["duration"])
+
         else:
             print(
                 f"{ANSI_GREEN}[Self-Operating Computer]{ANSI_RED}[Error] something went wrong :({ANSI_RESET}"
@@ -381,6 +409,25 @@ def parse_oai_response(response):
         click_data = re.search(r"RIGHTCLICK \{ (.+) \}", response).group(1)
         click_data_json = json.loads(f"{{{click_data}}}")
         return {"type": "RIGHTCLICK", "data": click_data_json}
+    
+    elif response.startswith("DOUBLECLICK"):
+        # Adjust the regex to match the correct format
+        click_data = re.search(r"DOUBLECLICK \{ (.+) \}", response).group(1)
+        click_data_json = json.loads(f"{{{click_data}}}")
+        return {"type": "DOUBLECLICK", "data": click_data_json}
+
+    elif response.startswith("DRAG"):
+        drag_data = re.search(r"DRAG \{(.+)\}", response).group(1)
+        drag_data_json = json.loads(f"{{{drag_data}}}")
+        return {"type": "DRAG", "data": drag_data_json}
+    elif response.startswith("HOLDMOUSE"):
+        holdmouse_data = re.search(r"HOLDMOUSE \{(.+)\}", response).group(1)
+        holdmouse_data_json = json.loads(f"{{{holdmouse_data}}}")
+        return {"type": "HOLDMOUSE", "data": holdmouse_data_json}
+    elif response.startswith("HOLDKEY"):
+        holdkey_data = re.search(r"HOLDKEY \{(.+)\}", response).group(1)
+        holdkey_data_json = json.loads(f"{{{holdkey_data}}}")
+        return {"type": "HOLDKEY", "data": holdkey_data_json}
 
     elif response.startswith("TYPE"):
         # Extract the text to type
@@ -477,6 +524,8 @@ def click_at_percentage(
     # Finally, click
     if click_type == "right":
         pyautogui.rightClick(x_pixel, y_pixel)
+    elif click_type == "double":
+        pyautogui.doubleClick(x_pixel, y_pixel)
     else:
         pyautogui.click(x_pixel, y_pixel)
     return "Successfully clicked"
@@ -550,6 +599,24 @@ def add_grid_to_image(original_image_path, new_image_path, grid_interval):
     # Save the image with the grid
     image.save(new_image_path)
 
+def drag(start, end):
+    start = (convert_percent_to_decimal(start["x"]), convert_percent_to_decimal(start["y"]))
+    end = (convert_percent_to_decimal(end["x"]), convert_percent_to_decimal(end["y"]))
+    pyautogui.moveTo(start)
+    pyautogui.dragTo(end, button='left')
+    return f"Dragged from {start} to {end}"
+
+def hold_key(key, duration):
+    pyautogui.keyDown(key)
+    time.sleep(duration)
+    pyautogui.keyUp(key)
+    return f"Held down {key} for {duration} seconds"
+
+def hold_mouse(duration):
+    pyautogui.mouseDown()
+    time.sleep(duration)
+    pyautogui.mouseUp()
+    return f"Held down mouse for {duration} seconds"
 
 def keyboard_type(text):
     text = text.replace("\\n", "\n")
@@ -558,6 +625,10 @@ def keyboard_type(text):
     pyautogui.press("enter")
     return "Type: " + text
 
+def double_click(coordinates):
+    coordinates = (convert_percent_to_decimal(coordinates["x"]), convert_percent_to_decimal(coordinates["y"]))
+    pyautogui.doubleClick(coordinates)
+    return f"Double clicked at {coordinates}"
 
 def search(text):
     if platform.system() == "Windows": 
