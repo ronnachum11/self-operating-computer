@@ -11,13 +11,12 @@ import subprocess
 import pyautogui
 import argparse
 import platform
-import Xlib.display
 
 from prompt_toolkit import prompt
 from prompt_toolkit.shortcuts import message_dialog
 from prompt_toolkit.styles import Style as PromptStyle
 from dotenv import load_dotenv
-from PIL import Image, ImageDraw, ImageFont, ImageGrab
+from PIL import Image, ImageDraw, ImageFont
 import matplotlib.font_manager as fm
 from openai import OpenAI
 
@@ -34,25 +33,29 @@ You are a Self-Operating Computer. You use the same operating system as a human.
 
 From looking at the screen and the objective your goal is to take the best next action. 
 
-To operate the computer you have the four options below. 
+To operate the computer you have the five options below. 
 
 1. CLICK - Move mouse and click
-2. TYPE - Type on the keyboard
-3. SEARCH - Search for a program on Mac and open it
-4. DONE - When you completed the task respond with the exact following phrase content
+2. RIGHTCLICK - Move mouse and right click
+3. TYPE - Type on the keyboard
+4. SEARCH - Search for a program on Mac and open it
+5. DONE - When you completed the task respond with the exact following phrase content
 
 Here are the response formats below. 
 
 1. CLICK
 Response: CLICK {{ "x": "percent", "y": "percent", "description": "~description here~", "reason": "~reason here~" }} 
 
-2. TYPE
+2. RIGHTCLICK
+Response: RIGHT CLICK {{ "x": "percent", "y": "percent", "description": "~description here~", "reason": "~reason here~" }}
+
+3. TYPE
 Response: TYPE "value you want to type"
 
-2. SEARCH
+4. SEARCH
 Response: SEARCH "app you want to search for on Mac"
 
-3. DONE
+5. DONE
 Response: DONE
 
 Here are examples of how to respond.
@@ -63,7 +66,7 @@ __
 Objective: Open Spotify and play the beatles
 SEARCH Spotify
 __
-Objective: Find an image of a banana
+Objective: Find a image of a banana
 CLICK {{ "x": "50%", "y": "60%", "description": "Click: Google Search field", "reason": "This will allow me to search for a banana" }} 
 __
 Objective: Go buy a book about the history of the internet
@@ -72,7 +75,8 @@ __
 
 A few important notes: 
 
-- Default to opening Google Chrome with SEARCH to find things that are on the internet. 
+- Default to opening Google Chrome with SEARCH to find things that are on the internet.
+- When typing into the address bar, beware of auto-complete. You may need to do a space and backspace at the end of your search to avoid auto-complete.
 - Go to Google Docs and Google Sheets by typing in the Chrome Address bar
 - When opening Chrome, if you see a profile icon click that to open chrome fully, it is located at: {{ "x": "50%", "y": "55%" }} 
 - The Chrome address bar is generally at: {{ "x": "50%", "y": "9%" }}
@@ -228,6 +232,8 @@ def main(model):
             function_response = keyboard_type(action_detail)
         elif action_type == "CLICK":
             function_response = mouse_click(action_detail)
+        elif action_type == "RIGHTCLICK":
+            function_response = mouse_click(action_detail, "right")
         else:
             print(
                 f"{ANSI_GREEN}[Self-Operating Computer]{ANSI_RED}[Error] something went wrong :({ANSI_RESET}"
@@ -370,6 +376,12 @@ def parse_oai_response(response):
         click_data_json = json.loads(f"{{{click_data}}}")
         return {"type": "CLICK", "data": click_data_json}
 
+    elif response.startswith("RIGHTCLICK"):
+        # Adjust the regex to match the correct format
+        click_data = re.search(r"RIGHTCLICK \{ (.+) \}", response).group(1)
+        click_data_json = json.loads(f"{{{click_data}}}")
+        return {"type": "RIGHTCLICK", "data": click_data_json}
+
     elif response.startswith("TYPE"):
         # Extract the text to type
         type_data = re.search(r'TYPE "(.+)"', response, re.DOTALL).group(1)
@@ -425,13 +437,13 @@ def summarize(messages, objective):
         return "Failed to summarize the workflow"
 
 
-def mouse_click(click_detail):
+def mouse_click(click_detail, click_type="left"):
     try:
         x = convert_percent_to_decimal(click_detail["x"])
         y = convert_percent_to_decimal(click_detail["y"])
 
         if click_detail and isinstance(x, float) and isinstance(y, float):
-            click_at_percentage(x, y)
+            click_at_percentage(x, y, click_type)
             return click_detail["description"]
         else:
             return "We failed to click"
@@ -442,7 +454,7 @@ def mouse_click(click_detail):
 
 
 def click_at_percentage(
-    x_percentage, y_percentage, duration=0.2, circle_radius=50, circle_duration=0.5
+    x_percentage, y_percentage, click_type="left", duration=0.2, circle_radius=50, circle_duration=0.5
 ):
     # Get the size of the primary monitor
     screen_width, screen_height = pyautogui.size()
@@ -463,7 +475,10 @@ def click_at_percentage(
         pyautogui.moveTo(x, y, duration=0.1)
 
     # Finally, click
-    pyautogui.click(x_pixel, y_pixel)
+    if click_type == "right":
+        pyautogui.rightClick(x_pixel, y_pixel)
+    else:
+        pyautogui.click(x_pixel, y_pixel)
     return "Successfully clicked"
 
 
@@ -562,23 +577,12 @@ def search(text):
 
 
 def capture_screen_with_cursor(file_path=os.path.join("screenshots", "screenshot.png")):
-    user_platform = platform.system()
-    
-    if user_platform == "Windows":
+    # Use the screencapture utility to capture the screen with the cursor
+    if platform.system() == "Windows":
         screenshot = pyautogui.screenshot()
         screenshot.save(file_path)
-    elif user_platform == "Linux":
-        # Use xlib to prevent scrot dependency for Linux
-        screen = Xlib.display.Display().screen()
-        size = screen.width_in_pixels, screen.height_in_pixels
-        screenshot = ImageGrab.grab(bbox=(0, 0, size[0], size[1]))
-        screenshot.save(file_path)
-    elif user_platform == "Darwin": # (Mac OS)
-        # Use the screencapture utility to capture the screen with the cursor
-        subprocess.run(["screencapture", "-C", file_path])
     else:
-        print(f"The platform you're using ({user_platform}) is not currently supported")
-
+        subprocess.run(["screencapture", "-C", file_path])
 
 def extract_json_from_string(s):
     # print("extracting json from string", s)
